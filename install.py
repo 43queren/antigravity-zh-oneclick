@@ -34,9 +34,42 @@ TAG = "Antigravity Chinese Translation Injection v3-full"
 ANCHOR = "  const combinedDict = Object.assign({}, coreWords, dictionary);"
 DICT_PLACEHOLDER = "__DICT_ITEMS__"
 UNPACK_PATTERNS = ["**/node_modules/chrome-devtools-mcp/**"]
+META_SUFFIX = ".agzh.meta.json"  # 记录汉化状态，用于检测更新还原
 
 # 旧版标记（用于升级时清理）
 OLD_TAGS = ["Antigravity Chinese Translation Injection v2-extra"]
+
+
+def _meta_path(asar_path):
+    return asar_path + META_SUFFIX
+
+
+def _read_meta(asar_path):
+    """读取汉化元数据；损坏或不存在时返回空 dict。"""
+    p = _meta_path(asar_path)
+    if not os.path.exists(p):
+        return {}
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _write_meta(asar_path, patched, sha=None, version=None):
+    """写入汉化元数据。"""
+    p = _meta_path(asar_path)
+    data = {
+        "patched": bool(patched),
+        "sha256": sha or "",
+        "app_version": version or "",
+    }
+    try:
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print("[!] 写入元数据失败（不影响汉化）: %s" % e)
 
 
 def _load_engine_template():
@@ -380,12 +413,27 @@ def cmd_install(asar_path, resources_dir):
     if os.path.exists(preload):
         with open(preload, "r", encoding="utf-8") as f:
             already = TAG in f.read()
+
+    meta = _read_meta(asar_path)
+    was_patched = bool(meta.get("patched"))
+    current_sha = sha256(asar_path)
+
+    # 判断安装场景：
+    #   A. 当前是原版 + 之前汉化过 => 被官方更新还原了
+    #   B. 当前是原版 + 从未汉化 => 首次安装
+    #   C. 当前已是汉化版 => 更新词典/修复
+    bak = asar_path + ".bak"
     if already:
         print("[*] 当前已是汉化版，跳过备份（保留官方原版 .bak）")
-
-    # 2. 备份：仅当当前 asar 未被汉化（是官方版）时，才可能覆盖 .bak
-    bak = asar_path + ".bak"
-    if not already:
+    elif was_patched:
+        print("[!] 检测到版本变化：汉化已被 Antigravity 更新还原。")
+        print("[*] 正在重新汉化，并把新版本官方原版更新到备份 ...")
+        # 关键：更新都被还原了，说明 .bak 可能是旧版本；用当前（新）原版覆盖备份，
+        # 确保将来 --restore 装回的是当前版本，而不是过时的旧版本。
+        shutil.copy2(asar_path, bak)
+        print("[OK] 已备份当前官方原版 -> %s" % bak)
+    else:
+        print("[*] 首次安装，备份官方原版 ...")
         if not os.path.exists(bak):
             shutil.copy2(asar_path, bak)
             print("[OK] 首次备份官方原版 -> %s" % bak)
@@ -443,7 +491,10 @@ def cmd_install(asar_path, resources_dir):
     if os.path.isdir(old_unpacked_bak):
         shutil.rmtree(old_unpacked_bak, ignore_errors=True)
     print("[OK] 已替换 app.asar（新大小: %d bytes）" % os.path.getsize(asar_path))
-    print("[OK] SHA256: %s" % sha256(asar_path))
+    new_sha = sha256(asar_path)
+    print("[OK] SHA256: %s" % new_sha)
+    # 记录汉化状态，供下次运行检测是否被更新还原
+    _write_meta(asar_path, patched=True, sha=new_sha)
 
     shutil.rmtree(tmp, ignore_errors=True)
 
@@ -498,6 +549,8 @@ def cmd_restore(asar_path, resources_dir):
         app_root = os.path.dirname(os.path.dirname(resources_dir))
         codesign_macos(app_root)
     print("[OK] 已还原官方原版 app.asar（SHA256: %s）" % sha256(asar_path))
+    # 还原后清除汉化标记，避免下次安装误判为"更新后重新汉化"
+    _write_meta(asar_path, patched=False)
     print("[OK] 汉化已移除，请重启 Antigravity。")
 
 
