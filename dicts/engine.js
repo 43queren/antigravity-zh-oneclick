@@ -493,6 +493,10 @@
   const meridiem = function (ap) { return ap.toUpperCase() === 'PM' ? '下午' : '上午'; };
   // 动态正则规则（参考社区汉化项目沉淀，整串锚定匹配；在词典精确匹配之后执行）
   const dynamicRules = [
+    // Customizations 页：动作 + 专有名（插件名保留英文，只翻动作）
+    [/^Install (.+)$/, '安装 $1'],
+    [/^Add (.+)$/, '添加 $1'],
+    [/^Details for (.+)$/, '$1 详情'],
     [/^(\d+)\s*(?:seconds?|secs?)\s+ago$/i, '$1 秒前'],
     [/^(\d+)\s*(?:minutes?|mins?)\s+ago$/i, '$1 分钟前'],
     [/^(\d+)\s*(?:hours?|hrs?)\s+ago$/i, '$1 小时前'],
@@ -1056,9 +1060,12 @@
     const observer = new MutationObserver((mutations) => {
       // 防抖：用 rAF 合并同一帧内的多次变动，避免"翻译->React重渲染->再翻译"
       // 的同步递归风暴（点击设置卡死的第三来源）。
-      observer.disconnect();
+      // 重要：这里绝不能 disconnect()！之前 disconnect 后要等 rAF 才重新 observe，
+      // 那个窗口内 React 的 SPA 路由切换（如进入 Customizations 页）产生的 DOM
+      // 变更会全部丢失，导致该页残留英文。翻译是幂等的，保持 observer 常驻即可，
+      // 重复翻译不会产生新 mutation，rAF 合并足以避免风暴。
       pendingMutations = pendingMutations.concat(mutations);
-      if (rafPending) { observer.observe(root, observerConfig); return; }
+      if (rafPending) { return; }
       rafPending = true;
       const flush = () => {
         rafPending = false;
@@ -1101,7 +1108,6 @@
       } catch (e) {
         console.error('Observer translation error:', e);
       }
-        observer.observe(root, observerConfig);
       };
       const sch = (typeof requestAnimationFrame === 'function') ? requestAnimationFrame : (cb) => setTimeout(cb, 16);
       sch(flush);
