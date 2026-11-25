@@ -18,6 +18,7 @@
 - **零依赖**：纯 Python 标准库；电脑没装 Python 时脚本会自动下载官方便携版（约 11 MB）
 - **自动检测更新还原**：脚本会记录汉化状态；当 Antigravity 自动更新把汉化覆盖后，再次运行会提示 `检测到版本变化：汉化已被更新还原，正在重新汉化`，并自动用新版本更新备份
 - **SPA 路由页面完整汉化**：修复了点击侧栏切换到「自定义扩展」等页面时残留英文的问题（observer 在防抖窗口断开导致路由切换的 DOM 变更丢失），现在进入这些页面也能正确翻译
+- **兼容 Antigravity 2.35+ 新架构**：新版把 Hub 界面移入 WebContentsView，preload 在 isolated world 运行，其 MutationObserver 看不到主世界 React 产生的 DOM 变更，导致整页残留英文。本版本加入轻量定时全页重扫（TreeWalker + 缓存快路径，空闲时每 2 秒一次）作为兜底，实测最大主线程占用 3ms，不会造成卡顿
 - **热重载词典**：可编辑 `~/.antigravity-zh/zh-CN.json` 增补词条（部分环境下可能需要重新安装才生效）
 - **跨平台**：安装器支持 Windows / macOS / Linux；`.bat` 一键脚本面向 Windows
 
@@ -93,6 +94,8 @@ Antigravity 是基于 Electron 的自研 IDE，其界面 bundle 由内嵌的 `la
 **Q: Antigravity 更新后汉化失效了？**
 
 官方自动更新会用原版整包替换 `app.asar`，把汉化覆盖。重新运行一次 `install.bat` 即可——脚本会自动检测到"汉化被还原"，提示 `检测到版本变化：汉化已被 Antigravity 更新还原`，自动重新汉化，并把新版本原版更新到备份（避免还原时装回旧版本）。建议关闭自动更新以避免反复失效。
+
+> 注意：2.35.x 大版本更新改变了窗口架构（WebContentsView + isolated world），旧版汉化包即使重新注入也会整页残留英文。**请务必使用包含「兼容 2.35+」修复的最新版本**（带 `scheduleSweep` 全页重扫）。
 
 **Q: 点击"设置"卡死？**
 

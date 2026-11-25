@@ -1124,6 +1124,56 @@
     return shadowRoot;
   };
 
+  // ===== 兜底全页重扫（跨 world 兼容）=====
+  // Antigravity 2.35+ 把 Hub 界面放进 WebContentsView，preload 运行在 isolated
+  // world。该世界的 MutationObserver 看不到 main world（React）产生的 DOM 变更，
+  // 导致仅靠 observer 时会整页残留英文。这里用 TreeWalker 做低成本全页重扫：
+  // 只处理文本节点与几个属性，已有中文/已缓存的文本几乎零成本。
+  let sweepTimer = null;
+  function sweepDoc() {
+    if (!document.body) return;
+    try {
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+      let n;
+      while ((n = walker.nextNode())) {
+        const original = n.nodeValue;
+        // 快路径：已含中文或空白，跳过昂贵的词典查询
+        if (!original || !/[A-Za-z]/.test(original) || /[\u4e00-\u9fff]/.test(original)) continue;
+        const parent = n.parentElement;
+        if (parent && shouldSkipNode(n)) continue;
+        const translated = translateString(original);
+        if (original !== translated) n.nodeValue = translated;
+      }
+      const attrs = ['placeholder', 'title', 'aria-label'];
+      const all = document.body.querySelectorAll('[placeholder],[title],[aria-label]');
+      for (let i = 0; i < all.length; i++) {
+        const el = all[i];
+        if (shouldSkipNode(el)) continue;
+        for (let j = 0; j < attrs.length; j++) {
+          const a = attrs[j];
+          const original = el.getAttribute && el.getAttribute(a);
+          if (!original || !/[A-Za-z]/.test(original) || /[\u4e00-\u9fff]/.test(original)) continue;
+          const translated = translateString(original);
+          if (original !== translated) el.setAttribute(a, translated);
+        }
+      }
+    } catch (e) {
+      console.error('Sweep translation error:', e);
+    }
+  }
+
+  function scheduleSweep() {
+    if (sweepTimer) return;
+    // 启动后前 10 秒每 400ms 扫一次（覆盖 React 首屏渲染），之后每 2 秒一次。
+    const start = Date.now();
+    const tick = () => {
+      sweepDoc();
+      const elapsed = Date.now() - start;
+      sweepTimer = setTimeout(tick, elapsed < 10000 ? 400 : 2000);
+    };
+    sweepTimer = setTimeout(tick, 300);
+  }
+
   function startObserver() {
     if (!document.body) {
       document.addEventListener('DOMContentLoaded', startObserver);
@@ -1135,6 +1185,7 @@
       console.error('Translation error:', e);
     }
     observeRoot(document.body);
+    scheduleSweep();
   }
 
   if (document.readyState === 'loading') {
