@@ -20,6 +20,7 @@
 - **SPA 路由页面完整汉化**：修复了点击侧栏切换到「自定义扩展」等页面时残留英文的问题（observer 在防抖窗口断开导致路由切换的 DOM 变更丢失），现在进入这些页面也能正确翻译
 - **兼容 Antigravity 2.35+ 新架构**：新版把 Hub 界面移入 WebContentsView，preload 在 isolated world 运行，其 MutationObserver 看不到主世界 React 产生的 DOM 变更，导致整页残留英文。本版本加入轻量定时全页重扫（TreeWalker + 缓存快路径，空闲时每 2 秒一次）作为兜底，实测最大主线程占用 3ms，不会造成卡顿
 - **热重载词典**：可编辑 `~/.antigravity-zh/zh-CN.json` 增补词条（部分环境下可能需要重新安装才生效）
+- **自动守护（可选）**：`install_watchdog.ps1` 安装登录自启守护，每 20 分钟检测一次；Antigravity 自动更新把汉化覆盖后会自动重新汉化，无需手动干预（无需管理员权限）
 - **跨平台**：安装器支持 Windows / macOS / Linux；`.bat` 一键脚本面向 Windows
 
 ---
@@ -36,6 +37,18 @@
 3. 完成。若界面未立即变化，完全退出 Antigravity 后重新打开一次
 
 > 若电脑未安装 Python，脚本会自动下载便携版（仅首次，约 11 MB）。
+
+### 让汉化在每次更新后自动恢复（推荐）
+
+Antigravity 会自动更新，每次更新都会把汉化冲掉。装一次守护即可高枕无忧：
+
+右键 **`install_watchdog.ps1`** → **使用 PowerShell 运行**（或在 PowerShell 里执行它）。它会：
+- 在「启动」文件夹创建登录自启项（无需管理员权限）
+- 立即启动一个后台守护，每 20 分钟检测一次
+- 一旦发现汉化被更新还原，就在 Antigravity 关闭时自动重新汉化（运行中则不打断，等下次）
+
+运行日志在 `%LOCALAPPDATA%\agy-auto-repatch.log`。想卸载守护，删除启动文件夹里的
+`Antigravity汉化守护.lnk` 并结束对应的 powershell 进程即可。
 
 ### macOS / Linux
 
